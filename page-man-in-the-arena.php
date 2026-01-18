@@ -535,11 +535,11 @@ $providers = new WP_Query(array(
                     </div>
                     
                     <div class="quote-text">
-                        It is not the critic who counts; not the man who points out how the strong man stumbles, 
+                        It is <span class="emphasis">not the critic who counts;</span> not the man who points out how the strong man stumbles, 
                         or where the doer of deeds could have done them better. The credit belongs to 
-                        <span class="highlight">the man who is actually in the arena</span>, whose face is marred by dust 
+                        <span class="emphasis">the man who is actually in the arena</span>, whose face is marred by dust 
                         and sweat and blood; who strives valiantly; who errs, who comes short again and again, 
-                        because there is no effort without error and shortcoming; but who does actually strive 
+                        because there is <span class="emphasis">no effort without error and shortcoming;</span> but who does actually strive 
                         to do the deeds; who knows great enthusiasms, the great devotions; who spends himself 
                         in a worthy cause; who at the best knows in the end the triumph of high achievement, 
                         and who at the worst, if he fails, <span class="emphasis">at least fails while daring greatly</span>, 
@@ -585,11 +585,11 @@ $providers = new WP_Query(array(
                     </div>
                     
                     <div class="quote-text">
-                        So live your life that the fear of death can never enter your heart. Trouble no one about their religion; 
+                        So live your life that <span class="emphasis">fear can never enter your heart.</span> Trouble no one about their religion; 
                         respect others in their view, and demand that they respect yours. Love your life, perfect your life, 
-                        beautify all things in your life. Seek to make your life long and its purpose in the service of your people.
+                        beautify all things in your life. Seek to make your life long and <span class="emphasis">its purpose in the service of your people.</span>
                         <br><br>
-                        Prepare a noble death song for the day when you go over the great divide. Always give a word or a sign 
+                        Prepare a noble song for the day when you go over the great divide. Always give a word or a sign 
                         of salute when meeting or passing a friend, even a stranger, when in a lonely place. Show respect to all 
                         people and grovel to none.
                         <br><br>
@@ -597,9 +597,9 @@ $providers = new WP_Query(array(
                         for giving thanks, the fault lies only in yourself. Abuse no one and no thing, for abuse turns the wise 
                         ones to fools and robs the spirit of its vision.
                         <br><br>
-                        When it comes your time to die, be not like those whose hearts are filled with the fear of death, so that 
+                        When it comes your time, be <span class="emphasis">not like those whose hearts are filled with the fear,</span> so that 
                         when their time comes they weep and pray for a little more time to live their lives over again in a different way. 
-                        <span class="emphasis">Sing your death song and die like a hero going home.</span>
+                        <span class="emphasis">Sing your song and depart like a hero going home.</span>
                     </div>
                     
                     <div class="quote-attribution">
