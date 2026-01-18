@@ -12,12 +12,7 @@
   --rdr-bg-grey: #F3F4F6;
   --rdr-border-grey: #E0E0E0;
 }
-Let's make sure it works:
-Test 1: Make a Small Change
 
-Open style.css
-Add a comment: /* Git test - delete this line */
-Save file
 /* RESET & BASE */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif; color: var(--rdr-charcoal); line-height: 1.6; }
