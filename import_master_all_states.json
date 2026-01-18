@@ -1,13 +1,4 @@
 {
-  "importer": "rdrn_csv_cpt_importer",
-  "version": "1.0",
-  "label": "RDRN Providers Import - ALL STATES (master)",
-  "post_type": "rdrn_provider",
-  "sources": {
-    "mode": "directory_glob",
-    "directory": "/mnt/data/state_csvs",
-    "pattern": "rdrn_providers_*.csv"
-  },
   "unique_key": {
     "strategy": "normalized_concat",
     "fields": [
