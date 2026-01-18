@@ -134,6 +134,201 @@ function reddoor_register_provider_cpt() {
 }
 add_action('init', 'reddoor_register_provider_cpt');
 
+// ============================================================================
+// PROVIDER DATABASE TABLES (Overview + Services/Attributes)
+//
+// Goal: store *all* provider data (including full services/attributes) in
+// separate WordPress database tables for scale and fidelity.
+//
+// Tables created:
+//  - {$wpdb->prefix}rdrn_providers
+//  - {$wpdb->prefix}rdrn_provider_services
+//
+// Notes:
+//  - We create/upgrade tables idempotently via dbDelta.
+//  - We also preserve the raw JSON payload on each provider row.
+// ============================================================================
+
+function reddoor_ensure_provider_tables() {
+    global $wpdb;
+
+    // Run once per schema version.
+    $schema_version = '1.0.0';
+    $opt_key = 'rdrn_provider_tables_schema_version';
+    $installed = get_option($opt_key);
+    if ($installed === $schema_version) return;
+
+    require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+    $charset_collate = $wpdb->get_charset_collate();
+
+    $providers_table = $wpdb->prefix . 'rdrn_providers';
+    $services_table  = $wpdb->prefix . 'rdrn_provider_services';
+
+    // Providers: one row per physical location / listing.
+    $sql1 = "CREATE TABLE {$providers_table} (
+        id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+        external_id VARCHAR(191) NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        program_name VARCHAR(255) NULL,
+        facility_type VARCHAR(32) NULL,
+        street1 VARCHAR(255) NULL,
+        street2 VARCHAR(255) NULL,
+        city VARCHAR(191) NULL,
+        state VARCHAR(8) NULL,
+        zip VARCHAR(20) NULL,
+        phone VARCHAR(64) NULL,
+        website VARCHAR(255) NULL,
+        latitude DECIMAL(10,7) NULL,
+        longitude DECIMAL(10,7) NULL,
+        raw_json LONGTEXT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY  (id),
+        UNIQUE KEY external_id (external_id),
+        KEY state (state),
+        KEY city (city)
+    ) {$charset_collate};";
+
+    // Services: many rows per provider (category/code/value triple).
+    $sql2 = "CREATE TABLE {$services_table} (
+        id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+        provider_id BIGINT(20) UNSIGNED NOT NULL,
+        category VARCHAR(255) NULL,
+        code VARCHAR(50) NULL,
+        value LONGTEXT NULL,
+        PRIMARY KEY  (id),
+        KEY provider_id (provider_id),
+        KEY code (code)
+    ) {$charset_collate};";
+
+    dbDelta($sql1);
+    dbDelta($sql2);
+
+    update_option($opt_key, $schema_version);
+}
+add_action('after_setup_theme', 'reddoor_ensure_provider_tables');
+
+/**
+ * Build a stable external_id for upserts.
+ *
+ * We purposefully include multiple fields to avoid collisions for large
+ * national imports where the same organization name can exist in many cities.
+ */
+function rdrn_build_external_id($name, $city, $state, $zip, $phone, $website) {
+    $name  = strtolower(trim((string)$name));
+    $city  = strtolower(trim((string)$city));
+    $state = strtolower(trim((string)$state));
+    $zip   = preg_replace('/[^0-9]/', '', (string)$zip);
+    $phone = preg_replace('/[^0-9]/', '', (string)$phone);
+    $website = strtolower(trim((string)$website));
+
+    $base = implode('|', array($name, $city, $state, $zip, $phone, $website));
+    // Keep the stored external_id short and index-safe.
+    return substr($state . '-' . md5($base), 0, 191);
+}
+
+/** Insert/update provider overview row. Returns provider_id. */
+function rdrn_db_upsert_provider($provider) {
+    global $wpdb;
+    rdrn_ensure_provider_tables();
+
+    $table = $wpdb->prefix . 'rdrn_providers';
+
+    $external_id = $provider['external_id'];
+    $wpdb->replace(
+        $table,
+        array(
+            'external_id' => $external_id,
+            'name' => $provider['name'] ?? '',
+            'program_name' => $provider['program_name'] ?? null,
+            'facility_type' => $provider['facility_type'] ?? null,
+            'street1' => $provider['street1'] ?? null,
+            'street2' => $provider['street2'] ?? null,
+            'city' => $provider['city'] ?? null,
+            'state' => $provider['state'] ?? null,
+            'zip' => $provider['zip'] ?? null,
+            'phone' => $provider['phone'] ?? null,
+            'website' => $provider['website'] ?? null,
+            'latitude' => $provider['latitude'] ?? null,
+            'longitude' => $provider['longitude'] ?? null,
+            'raw_json' => $provider['raw_json'] ?? null,
+        ),
+        array('%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%s','%f','%f','%s')
+    );
+
+    // Fetch id for foreign-key-like linking
+    $provider_id = (int) $wpdb->get_var($wpdb->prepare(
+        "SELECT id FROM {$table} WHERE external_id = %s LIMIT 1",
+        $external_id
+    ));
+
+    return $provider_id;
+}
+
+/** Replace all services rows for a provider_id with the given array. */
+function rdrn_db_replace_services($provider_id, $services) {
+    global $wpdb;
+    rdrn_ensure_provider_tables();
+
+    $table = $wpdb->prefix . 'rdrn_provider_services';
+    $provider_id = (int)$provider_id;
+    if ($provider_id <= 0) return;
+
+    // Remove old rows for this provider_id
+    $wpdb->delete($table, array('provider_id' => $provider_id), array('%d'));
+
+    if (empty($services) || !is_array($services)) return;
+
+    // Bulk insert in chunks to avoid huge queries
+    $chunk = array();
+    $max_chunk = 500;
+
+    foreach ($services as $s) {
+        if (!is_array($s)) continue;
+        $chunk[] = array(
+            'provider_id' => $provider_id,
+            'category' => isset($s['f1']) ? (string)$s['f1'] : null,
+            'code' => isset($s['f2']) ? (string)$s['f2'] : null,
+            'value' => isset($s['f3']) ? (string)$s['f3'] : null,
+        );
+
+        if (count($chunk) >= $max_chunk) {
+            rdrn_db_insert_services_chunk($table, $chunk);
+            $chunk = array();
+        }
+    }
+
+    if (!empty($chunk)) {
+        rdrn_db_insert_services_chunk($table, $chunk);
+    }
+}
+
+function rdrn_db_insert_services_chunk($table, $rows) {
+    global $wpdb;
+    if (empty($rows)) return;
+
+    $values = array();
+    $placeholders = array();
+    foreach ($rows as $r) {
+        $placeholders[] = '(%d,%s,%s,%s)';
+        $values[] = (int)$r['provider_id'];
+        $values[] = $r['category'];
+        $values[] = $r['code'];
+        $values[] = $r['value'];
+    }
+
+    $sql = "INSERT INTO {$table} (provider_id, category, code, value) VALUES " . implode(',', $placeholders);
+    $wpdb->query($wpdb->prepare($sql, $values));
+}
+
+/**
+ * Convenience wrapper so we can call from other functions even if the
+ * name `reddoor_ensure_provider_tables` exists.
+ */
+function rdrn_ensure_provider_tables() {
+    reddoor_ensure_provider_tables();
+}
+
 // Provider Taxonomies
 function reddoor_register_provider_taxonomies() {
     // County
@@ -279,6 +474,16 @@ function reddoor_importer_menu() {
         'manage_options',
         'reddoor-upload-providers',
         'reddoor_provider_upload_page'
+    );
+
+    // JSON uploader (writes into separate DB tables)
+    add_submenu_page(
+        'edit.php?post_type=rdr_provider',
+        'Upload Providers (JSON → DB)',
+        'Upload Providers (JSON → DB)',
+        'manage_options',
+        'reddoor-upload-providers-json',
+        'reddoor_provider_upload_json_page'
     );
 }
 add_action('admin_menu', 'reddoor_importer_menu');
@@ -445,6 +650,190 @@ function reddoor_provider_upload_page() {
         </div>
     </div>
     <?php
+}
+
+// ============================================================================
+// PROVIDER JSON → DB UPLOADER (writes to separate DB tables)
+// ============================================================================
+
+function reddoor_provider_upload_json_page() {
+    ?>
+    <div class="wrap">
+        <h1>📥 Upload Providers (JSON → Database Tables)</h1>
+
+        <?php
+        if (isset($_POST['import_providers_json']) && check_admin_referer('reddoor_import_providers_json')) {
+            if (!isset($_FILES['providers_json']) || $_FILES['providers_json']['error'] !== UPLOAD_ERR_OK) {
+                echo '<div class="notice notice-error"><p>❌ Upload failed. Please choose a .json file.</p></div>';
+            } else {
+                @set_time_limit(0);
+                wp_defer_term_counting(true);
+                wp_defer_comment_counting(true);
+                wp_suspend_cache_addition(true);
+
+                $tmp = $_FILES['providers_json']['tmp_name'];
+                $result = rdrn_import_providers_json_file_to_tables($tmp);
+
+                if (!empty($result['errors'])) {
+                    echo '<div class="notice notice-warning"><p>⚠️ Imported with warnings. Showing first 5:</p><ul>';
+                    foreach (array_slice($result['errors'], 0, 5) as $e) {
+                        echo '<li>' . esc_html($e) . '</li>';
+                    }
+                    echo '</ul></div>';
+                }
+
+                echo '<div class="notice notice-success"><p>✅ Imported <strong>' . intval($result['imported']) . '</strong> providers into DB tables.</p></div>';
+            }
+        }
+        ?>
+
+        <div class="card" style="max-width: 900px; padding: 20px;">
+            <p style="font-size: 14px; line-height: 1.6;">
+                This importer writes into two WordPress DB tables:
+                <code>wp_rdrn_providers</code> (overview) and <code>wp_rdrn_provider_services</code> (services/attributes).
+                It preserves the full raw JSON payload for each provider.
+            </p>
+
+            <ul style="line-height: 1.8; margin-left: 20px;">
+                <li><strong>Accepted formats:</strong> JSON array, single JSON object, <code>{"providers": [...]}</code>, or NDJSON (one JSON object per line).</li>
+                <li><strong>Upsert key:</strong> stable <code>external_id</code> derived from name+location+phone+website to prevent duplicates.</li>
+                <li><strong>Scale:</strong> safe for 13k+ rows; services stored separately.</li>
+            </ul>
+
+            <form method="post" enctype="multipart/form-data" style="margin-top: 15px;">
+                <?php wp_nonce_field('reddoor_import_providers_json'); ?>
+                <p><input type="file" name="providers_json" accept="application/json,.json,.ndjson" required></p>
+                <p>
+                    <input type="submit" name="import_providers_json" class="button button-primary button-hero" value="🚀 Import JSON into DB" onclick="return confirm('This will import providers into database tables. Continue?');">
+                </p>
+            </form>
+        </div>
+    </div>
+    <?php
+}
+
+/**
+ * Import a JSON (or NDJSON) file into the provider DB tables.
+ * Returns ['imported' => int, 'errors' => string[]].
+ */
+function rdrn_import_providers_json_file_to_tables($filepath) {
+    $out = array('imported' => 0, 'errors' => array());
+    if (!file_exists($filepath)) {
+        $out['errors'][] = 'File not found.';
+        return $out;
+    }
+
+    // Try normal JSON decode first (array/single object/wrapped).
+    $contents = file_get_contents($filepath);
+    $decoded = json_decode($contents, true);
+
+    if (json_last_error() === JSON_ERROR_NONE && !empty($decoded)) {
+        $items = rdrn_normalize_provider_json_payload($decoded);
+        foreach ($items as $i => $provider) {
+            $ok = rdrn_import_one_provider_object_to_tables($provider, $out['errors']);
+            if ($ok) $out['imported']++;
+        }
+        return $out;
+    }
+
+    // Fall back to NDJSON: one JSON object per line.
+    $fh = fopen($filepath, 'r');
+    if (!$fh) {
+        $out['errors'][] = 'Unable to read file.';
+        return $out;
+    }
+
+    $line_no = 0;
+    while (($line = fgets($fh)) !== false) {
+        $line_no++;
+        $line = trim($line);
+        if ($line === '') continue;
+        $obj = json_decode($line, true);
+        if (json_last_error() !== JSON_ERROR_NONE || !is_array($obj)) {
+            $out['errors'][] = "NDJSON parse error on line {$line_no}.";
+            continue;
+        }
+        $ok = rdrn_import_one_provider_object_to_tables($obj, $out['errors']);
+        if ($ok) $out['imported']++;
+    }
+    fclose($fh);
+    return $out;
+}
+
+/** Normalize supported JSON payload shapes to an array of provider objects. */
+function rdrn_normalize_provider_json_payload($decoded) {
+    if (isset($decoded['providers']) && is_array($decoded['providers'])) {
+        return $decoded['providers'];
+    }
+    // If a single provider object
+    if (isset($decoded['name1']) || isset($decoded['name']) || isset($decoded['external_id'])) {
+        return array($decoded);
+    }
+    // If already an array
+    if (is_array($decoded)) {
+        // Heuristic: list of objects
+        $is_list = array_keys($decoded) === range(0, count($decoded) - 1);
+        if ($is_list) return $decoded;
+    }
+    return array();
+}
+
+/** Import a single provider object into overview + services tables. */
+function rdrn_import_one_provider_object_to_tables($obj, &$errors) {
+    if (!is_array($obj)) return false;
+
+    // Support your current scraper shape (name1/name2/street1/street2/etc.)
+    $name = trim((string)($obj['name1'] ?? $obj['name'] ?? ''));
+    if ($name === '') {
+        $errors[] = 'Missing name.';
+        return false;
+    }
+
+    $program_name = trim((string)($obj['name2'] ?? $obj['program_name'] ?? ''));
+    $street1 = trim((string)($obj['street1'] ?? $obj['street_1'] ?? $obj['street'] ?? ''));
+    $street2 = trim((string)($obj['street2'] ?? $obj['street_2'] ?? ''));
+    $city    = trim((string)($obj['city'] ?? ''));
+    $state   = strtoupper(trim((string)($obj['state'] ?? '')));
+    $zip     = trim((string)($obj['zip'] ?? ''));
+    $phone   = trim((string)($obj['phone'] ?? $obj['phone_number'] ?? ''));
+    $website = trim((string)($obj['website'] ?? ''));
+    $facility_type = trim((string)($obj['typeFacility'] ?? $obj['facility_type'] ?? ''));
+    $lat = isset($obj['latitude']) ? (float)$obj['latitude'] : null;
+    $lng = isset($obj['longitude']) ? (float)$obj['longitude'] : null;
+
+    $external_id = trim((string)($obj['external_id'] ?? ''));
+    if ($external_id === '') {
+        $external_id = rdrn_build_external_id($name, $city, $state, $zip, $phone, $website);
+    }
+
+    $services = $obj['services'] ?? array();
+    if (!is_array($services)) $services = array();
+
+    $provider_row = array(
+        'external_id' => $external_id,
+        'name' => $name,
+        'program_name' => $program_name !== '' ? $program_name : null,
+        'facility_type' => $facility_type !== '' ? $facility_type : null,
+        'street1' => $street1 !== '' ? $street1 : null,
+        'street2' => $street2 !== '' ? $street2 : null,
+        'city' => $city !== '' ? $city : null,
+        'state' => $state !== '' ? $state : null,
+        'zip' => $zip !== '' ? $zip : null,
+        'phone' => $phone !== '' ? $phone : null,
+        'website' => $website !== '' ? $website : null,
+        'latitude' => $lat,
+        'longitude' => $lng,
+        'raw_json' => wp_json_encode($obj),
+    );
+
+    $provider_id = rdrn_db_upsert_provider($provider_row);
+    if ($provider_id <= 0) {
+        $errors[] = 'DB upsert failed for: ' . $name;
+        return false;
+    }
+
+    rdrn_db_replace_services($provider_id, $services);
+    return true;
 }
 
 // ============================================================================
