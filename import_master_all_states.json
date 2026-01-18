@@ -1,0 +1,242 @@
+{
+  "importer": "rdrn_csv_cpt_importer",
+  "version": "1.0",
+  "label": "RDRN Providers Import - ALL STATES (master)",
+  "post_type": "rdrn_provider",
+  "sources": {
+    "mode": "directory_glob",
+    "directory": "/mnt/data/state_csvs",
+    "pattern": "rdrn_providers_*.csv"
+  },
+  "unique_key": {
+    "strategy": "normalized_concat",
+    "fields": [
+      "display_name",
+      "street1",
+      "city",
+      "state",
+      "zip"
+    ],
+    "store_meta_key": "_rdrn_unique_key"
+  },
+  "post_fields": {
+    "post_title": {
+      "column": "display_name"
+    },
+    "post_status": "publish"
+  },
+  "meta_map": {
+    "rdrn_display_name": {
+      "column": "display_name"
+    },
+    "rdrn_name1": {
+      "column": "name1"
+    },
+    "rdrn_name2": {
+      "column": "name2"
+    },
+    "rdrn_street1": {
+      "column": "street1"
+    },
+    "rdrn_city": {
+      "column": "city"
+    },
+    "rdrn_state": {
+      "column": "state"
+    },
+    "rdrn_zip": {
+      "column": "zip"
+    }
+  },
+  "taxonomy_map": {
+    "rdrn_state": {
+      "mode": "single",
+      "column": "state",
+      "create_terms": true
+    },
+    "rdrn_city": {
+      "mode": "single",
+      "column": "city",
+      "create_terms": true
+    },
+    "rdrn_age_groups_accepted": {
+      "mode": "multi_semicolon",
+      "column": "Age Groups Accepted",
+      "create_terms": true
+    },
+    "rdrn_ancillary_services": {
+      "mode": "multi_semicolon",
+      "column": "Ancillary Services",
+      "create_terms": true
+    },
+    "rdrn_assessment_pre_treatment": {
+      "mode": "multi_semicolon",
+      "column": "Assessment/Pre-treatment",
+      "create_terms": true
+    },
+    "rdrn_detoxification__medical_withdrawal__service": {
+      "mode": "multi_semicolon",
+      "column": "Detoxification (medical withdrawal) Services",
+      "create_terms": true
+    },
+    "rdrn_education_and_counseling_services": {
+      "mode": "multi_semicolon",
+      "column": "Education and Counseling Services",
+      "create_terms": true
+    },
+    "rdrn_exclusive_services": {
+      "mode": "multi_semicolon",
+      "column": "Exclusive Services",
+      "create_terms": true
+    },
+    "rdrn_external_opioid_medications_source": {
+      "mode": "multi_semicolon",
+      "column": "External Opioid Medications Source",
+      "create_terms": true
+    },
+    "rdrn_external_source_of_medications_used_for_alc": {
+      "mode": "multi_semicolon",
+      "column": "External Source of Medications Used for Alcohol Use Disorder Treatment",
+      "create_terms": true
+    },
+    "rdrn_facility_operation__e_g___private__public": {
+      "mode": "multi_semicolon",
+      "column": "Facility Operation (e.g., Private, Public)",
+      "create_terms": true
+    },
+    "rdrn_facility_smoking_policy": {
+      "mode": "multi_semicolon",
+      "column": "Facility Smoking Policy",
+      "create_terms": true
+    },
+    "rdrn_facility_vaping_policy": {
+      "mode": "multi_semicolon",
+      "column": "Facility Vaping Policy",
+      "create_terms": true
+    },
+    "rdrn_hospitals": {
+      "mode": "multi_semicolon",
+      "column": "Hospitals",
+      "create_terms": true
+    },
+    "rdrn_language_services": {
+      "mode": "multi_semicolon",
+      "column": "Language Services",
+      "create_terms": true
+    },
+    "rdrn_license_certification_accreditation": {
+      "mode": "multi_semicolon",
+      "column": "License/Certification/Accreditation",
+      "create_terms": true
+    },
+    "rdrn_medical_services": {
+      "mode": "multi_semicolon",
+      "column": "Medical Services",
+      "create_terms": true
+    },
+    "rdrn_opioid_medications_used_in_treatment": {
+      "mode": "multi_semicolon",
+      "column": "Opioid Medications used in Treatment",
+      "create_terms": true
+    },
+    "rdrn_other_languages": {
+      "mode": "multi_semicolon",
+      "column": "Other Languages",
+      "create_terms": true
+    },
+    "rdrn_other_services": {
+      "mode": "multi_semicolon",
+      "column": "Other Services",
+      "create_terms": true
+    },
+    "rdrn_payment_assistance_available": {
+      "mode": "multi_semicolon",
+      "column": "Payment Assistance Available",
+      "create_terms": true
+    },
+    "rdrn_payment_insurance_funding_accepted": {
+      "mode": "multi_semicolon",
+      "column": "Payment/Insurance/Funding Accepted",
+      "create_terms": true
+    },
+    "rdrn_pharmacotherapies": {
+      "mode": "multi_semicolon",
+      "column": "Pharmacotherapies",
+      "create_terms": true
+    },
+    "rdrn_recovery_support_services": {
+      "mode": "multi_semicolon",
+      "column": "Recovery Support Services",
+      "create_terms": true
+    },
+    "rdrn_service_setting__e_g___outpatient__resident": {
+      "mode": "multi_semicolon",
+      "column": "Service Setting (e.g., Outpatient, Residential, Inpatient, etc.)",
+      "create_terms": true
+    },
+    "rdrn_sex_accepted": {
+      "mode": "multi_semicolon",
+      "column": "Sex Accepted",
+      "create_terms": true
+    },
+    "rdrn_special_programs_groups_offered": {
+      "mode": "multi_semicolon",
+      "column": "Special Programs/Groups Offered",
+      "create_terms": true
+    },
+    "rdrn_testing": {
+      "mode": "multi_semicolon",
+      "column": "Testing",
+      "create_terms": true
+    },
+    "rdrn_transitional_services": {
+      "mode": "multi_semicolon",
+      "column": "Transitional Services",
+      "create_terms": true
+    },
+    "rdrn_treatment_approaches": {
+      "mode": "multi_semicolon",
+      "column": "Treatment Approaches",
+      "create_terms": true
+    },
+    "rdrn_type_of_alcohol_use_disorder_treatment": {
+      "mode": "multi_semicolon",
+      "column": "Type of Alcohol Use Disorder Treatment",
+      "create_terms": true
+    },
+    "rdrn_type_of_care": {
+      "mode": "multi_semicolon",
+      "column": "Type of Care",
+      "create_terms": true
+    },
+    "rdrn_type_of_opioid_treatment": {
+      "mode": "multi_semicolon",
+      "column": "Type of Opioid Treatment",
+      "create_terms": true
+    }
+  },
+  "parsing": {
+    "list_delimiter": ";",
+    "trim": true,
+    "drop_empty_terms": true
+  },
+  "options": {
+    "skip_rows_with_blank_title": true,
+    "dedupe_terms_case_insensitive": true
+  },
+  "automation": {
+    "state_pages": {
+      "enabled": true,
+      "taxonomy": "rdrn_state",
+      "post_type": "page",
+      "template": "page-state-directory.php",
+      "title_format": "{STATE} Treatment & Recovery Providers",
+      "slug_format": "{STATE_LOWER}",
+      "parent_page_slug": "providers",
+      "meta": {
+        "rdrn_state_code": "{STATE}"
+      },
+      "shortcode": "[rdrn_directory state=\"{STATE}\"]"
+    }
+  }
+}
