@@ -22,11 +22,27 @@ get_header(); ?>
             <p class="hero-subtitle">
                 Find detailed listings for Substance Abuse professionals in: 🇺🇸 
                 <select id="stateSelector" onchange="filterByState(this.value)">
-                    <option value="OH">Ohio</option>
-                    <option value="PA">Pennsylvania</option>
-                    <option value="MI">Michigan</option>
-                    <option value="KY">Kentucky</option>
-                    <option value="IN">Indiana</option>
+                    <?php
+                    // All-states dropdown (consistent HTML; data-driven)
+                    $state_name_map = [
+                        'AL'=>'Alabama','AK'=>'Alaska','AZ'=>'Arizona','AR'=>'Arkansas','CA'=>'California','CO'=>'Colorado','CT'=>'Connecticut',
+                        'DE'=>'Delaware','FL'=>'Florida','GA'=>'Georgia','HI'=>'Hawaii','ID'=>'Idaho','IL'=>'Illinois','IN'=>'Indiana',
+                        'IA'=>'Iowa','KS'=>'Kansas','KY'=>'Kentucky','LA'=>'Louisiana','ME'=>'Maine','MD'=>'Maryland','MA'=>'Massachusetts',
+                        'MI'=>'Michigan','MN'=>'Minnesota','MS'=>'Mississippi','MO'=>'Missouri','MT'=>'Montana','NE'=>'Nebraska','NV'=>'Nevada',
+                        'NH'=>'New Hampshire','NJ'=>'New Jersey','NM'=>'New Mexico','NY'=>'New York','NC'=>'North Carolina','ND'=>'North Dakota',
+                        'OH'=>'Ohio','OK'=>'Oklahoma','OR'=>'Oregon','PA'=>'Pennsylvania','RI'=>'Rhode Island','SC'=>'South Carolina','SD'=>'South Dakota',
+                        'TN'=>'Tennessee','TX'=>'Texas','UT'=>'Utah','VT'=>'Vermont','VA'=>'Virginia','WA'=>'Washington','WV'=>'West Virginia',
+                        'WI'=>'Wisconsin','WY'=>'Wyoming','DC'=>'District of Columbia'
+                    ];
+
+                    // Sort by state name for a cleaner dropdown.
+                    asort($state_name_map, SORT_NATURAL | SORT_FLAG_CASE);
+
+                    $default_state = 'OH';
+                    foreach ($state_name_map as $code => $label) {
+                        echo '<option value="' . esc_attr($code) . '"' . selected($default_state, $code, false) . '>' . esc_html($label) . '</option>';
+                    }
+                    ?>
                 </select>
             </p>
         </div>
@@ -91,6 +107,65 @@ get_header(); ?>
                 }
                 ?>
             </div>
+
+            <h2>States:</h2>
+            <div class="city-grid" id="stateGrid">
+                <?php
+                // Build a state list from the imported provider DB table (SEO-friendly; consistent styling).
+                global $wpdb;
+                $providers_table = $wpdb->prefix . 'rdrn_providers';
+
+                $state_counts = $wpdb->get_results(
+                    "SELECT UPPER(TRIM(state)) AS st, COUNT(*) AS cnt
+                     FROM {$providers_table}
+                     WHERE state IS NOT NULL AND state <> ''
+                     GROUP BY UPPER(TRIM(state))",
+                    ARRAY_A
+                );
+
+                $counts_by_state = [];
+                if (is_array($state_counts)) {
+                    foreach ($state_counts as $row) {
+                        $st = strtoupper(trim($row['st'] ?? ''));
+                        if ($st === '') continue;
+                        $counts_by_state[$st] = (int)($row['cnt'] ?? 0);
+                    }
+                }
+
+                // Re-use the same map as the dropdown; only render states that actually exist in the table.
+                // (Avoids lots of empty state pages.)
+                $state_name_map = isset($state_name_map) && is_array($state_name_map) ? $state_name_map : [
+                    'AL'=>'Alabama','AK'=>'Alaska','AZ'=>'Arizona','AR'=>'Arkansas','CA'=>'California','CO'=>'Colorado','CT'=>'Connecticut',
+                    'DE'=>'Delaware','FL'=>'Florida','GA'=>'Georgia','HI'=>'Hawaii','ID'=>'Idaho','IL'=>'Illinois','IN'=>'Indiana',
+                    'IA'=>'Iowa','KS'=>'Kansas','KY'=>'Kentucky','LA'=>'Louisiana','ME'=>'Maine','MD'=>'Maryland','MA'=>'Massachusetts',
+                    'MI'=>'Michigan','MN'=>'Minnesota','MS'=>'Mississippi','MO'=>'Missouri','MT'=>'Montana','NE'=>'Nebraska','NV'=>'Nevada',
+                    'NH'=>'New Hampshire','NJ'=>'New Jersey','NM'=>'New Mexico','NY'=>'New York','NC'=>'North Carolina','ND'=>'North Dakota',
+                    'OH'=>'Ohio','OK'=>'Oklahoma','OR'=>'Oregon','PA'=>'Pennsylvania','RI'=>'Rhode Island','SC'=>'South Carolina','SD'=>'South Dakota',
+                    'TN'=>'Tennessee','TX'=>'Texas','UT'=>'Utah','VT'=>'Vermont','VA'=>'Virginia','WA'=>'Washington','WV'=>'West Virginia',
+                    'WI'=>'Wisconsin','WY'=>'Wyoming','DC'=>'District of Columbia'
+                ];
+                asort($state_name_map, SORT_NATURAL | SORT_FLAG_CASE);
+
+                $any = false;
+                foreach ($state_name_map as $code => $label) {
+                    $cnt = $counts_by_state[$code] ?? 0;
+                    if ($cnt <= 0) continue;
+                    $any = true;
+
+                    // Pretty URL target (state-scoped providers results)
+                    $url = home_url('/providers/' . strtolower($code) . '/');
+                    echo '<a href="' . esc_url($url) . '" class="city-link" data-state="' . esc_attr($code) . '">' .
+                         esc_html($label) .
+                         ' <span class="count">(' . intval($cnt) . ')</span></a>';
+                }
+
+                if (!$any) {
+                    echo '<p>No states found. Import providers first.</p>';
+                }
+                ?>
+            </div>
+
+            
         </div>
         
         <!-- DAILY READING WIDGET -->
@@ -294,7 +369,7 @@ document.getElementById('useLocation').addEventListener('click', function() {
 
 // State filter function
 function filterByState(state) {
-    window.location.href = '<?php echo home_url('/providers/'); ?>?state=' + state;
+    window.location.href = '<?php echo home_url('/providers/'); ?>' + state.toLowerCase() + '/';
 }
 
 // Search form enhancement
