@@ -1,41 +1,149 @@
 <?php
 /**
- * Template Name: Homepage
- * Description: Red Door Recovery Network Homepage
+ * Template Name: State Directory Page
+ * Description: Homepage-matching directory view scoped to a single state. State is inferred from the Page slug.
  */
 
-get_header(); ?>
+get_header();
+
+// Canonical code->name map (re-used across dropdown, titles, and state page links)
+$state_name_map = [
+    'AL'=>'Alabama','AK'=>'Alaska','AZ'=>'Arizona','AR'=>'Arkansas','CA'=>'California','CO'=>'Colorado','CT'=>'Connecticut',
+    'DE'=>'Delaware','FL'=>'Florida','GA'=>'Georgia','HI'=>'Hawaii','ID'=>'Idaho','IL'=>'Illinois','IN'=>'Indiana',
+    'IA'=>'Iowa','KS'=>'Kansas','KY'=>'Kentucky','LA'=>'Louisiana','ME'=>'Maine','MD'=>'Maryland','MA'=>'Massachusetts',
+    'MI'=>'Michigan','MN'=>'Minnesota','MS'=>'Mississippi','MO'=>'Missouri','MT'=>'Montana','NE'=>'Nebraska','NV'=>'Nevada',
+    'NH'=>'New Hampshire','NJ'=>'New Jersey','NM'=>'New Mexico','NY'=>'New York','NC'=>'North Carolina','ND'=>'North Dakota',
+    'OH'=>'Ohio','OK'=>'Oklahoma','OR'=>'Oregon','PA'=>'Pennsylvania','RI'=>'Rhode Island','SC'=>'South Carolina','SD'=>'South Dakota',
+    'TN'=>'Tennessee','TX'=>'Texas','UT'=>'Utah','VT'=>'Vermont','VA'=>'Virginia','WA'=>'Washington','WV'=>'West Virginia',
+    'WI'=>'Wisconsin','WY'=>'Wyoming','DC'=>'District of Columbia'
+];
+
+// Helper: slugify (matches your existing simple style)
+if (!function_exists('rdrn_slugify')) {
+    function rdrn_slugify($s) {
+        $s = strtolower(trim((string)$s));
+        $s = preg_replace('/[^a-z0-9]+/', '-', $s);
+        return trim($s, '-');
+    }
+}
+
+// Build name->code map and code->slug map
+$name_to_code = [];
+$code_to_slug = [];
+foreach ($state_name_map as $code => $name) {
+    $name_to_code[rdrn_slugify($name)] = $code;
+    $code_to_slug[$code] = rdrn_slugify($name);
+}
+
+// Determine current state based on page slug
+$current_slug = '';
+if (is_singular('page')) {
+    $current_slug = get_post_field('post_name', get_the_ID());
+}
+$current_slug = strtolower(trim((string)$current_slug));
+
+$current_state_code = 'OH';
+
+if (preg_match('/^[a-z]{2}$/', $current_slug)) {
+    $current_state_code = strtoupper($current_slug);
+} elseif ($current_slug !== '' && isset($name_to_code[$current_slug])) {
+    $current_state_code = $name_to_code[$current_slug];
+} elseif (!empty($_GET['state'])) {
+    $maybe = strtoupper(preg_replace('/[^A-Z]/', '', (string)$_GET['state']));
+    if (isset($state_name_map[$maybe])) {
+        $current_state_code = $maybe;
+    }
+}
+
+$current_state_name = $state_name_map[$current_state_code] ?? $current_state_code;
+
+// Base path for state pages (SEO: /state/<state-name>/)
+$state_base = '/state/';
+
+// --- Data fetch (custom provider tables) ---
+global $wpdb;
+$providers_table = $wpdb->prefix . 'rdrn_providers';
+
+// Counties in this state
+$county_rows = $wpdb->get_results(
+    $wpdb->prepare(
+        "SELECT county AS label, COUNT(*) AS cnt
+         FROM {$providers_table}
+         WHERE UPPER(TRIM(state)) = %s AND county IS NOT NULL AND county <> ''
+         GROUP BY county
+         ORDER BY county ASC",
+        $current_state_code
+    ),
+    ARRAY_A
+);
+
+// Major cities (top 40) in this state
+$city_rows = $wpdb->get_results(
+    $wpdb->prepare(
+        "SELECT city AS label, COUNT(*) AS cnt
+         FROM {$providers_table}
+         WHERE UPPER(TRIM(state)) = %s AND city IS NOT NULL AND city <> ''
+         GROUP BY city
+         ORDER BY cnt DESC, city ASC
+         LIMIT 40",
+        $current_state_code
+    ),
+    ARRAY_A
+);
+
+// States list (Option A: only states present in the table)
+$state_counts_rows = $wpdb->get_results(
+    "SELECT UPPER(TRIM(state)) AS st, COUNT(*) AS cnt
+     FROM {$providers_table}
+     WHERE state IS NOT NULL AND state <> ''
+     GROUP BY UPPER(TRIM(state))",
+    ARRAY_A
+);
+
+$counts_by_state = [];
+if (is_array($state_counts_rows)) {
+    foreach ($state_counts_rows as $r) {
+        $st = strtoupper(trim((string)($r['st'] ?? '')));
+        if ($st === '') continue;
+        $counts_by_state[$st] = (int)($r['cnt'] ?? 0);
+    }
+}
+
+// Sort dropdown by state name
+$dropdown_map = $state_name_map;
+asort($dropdown_map, SORT_NATURAL | SORT_FLAG_CASE);
+?>
 
 <main class="homepage">
-    <!-- HERO SEARCH SECTION -->
+    <!-- HERO SEARCH SECTION (same as homepage, but state-scoped) -->
     <div class="hero-search-section">
         <div class="hero-search-content">
             <h1 class="hero-title">Find a treatment<br>near you</h1>
-            
+
             <div class="hero-location">
                 <button type="button" class="geolocation-btn-large" id="useLocation" title="Use my location">
                     📍 Use My Location
                 </button>
                 <p class="location-helper">Or browse by county or city below</p>
             </div>
-            
+
             <p class="hero-subtitle">
-                Find detailed listings for Substance Abuse professionals in: 🇺🇸 
+                Find detailed listings for Substance Abuse professionals in: 🇺🇸
                 <select id="stateSelector" onchange="filterByState(this.value)">
-                    <option value="OH">Ohio</option>
-                    <option value="PA">Pennsylvania</option>
-                    <option value="MI">Michigan</option>
-                    <option value="KY">Kentucky</option>
-                    <option value="IN">Indiana</option>
+                    <?php
+                    foreach ($dropdown_map as $code => $label) {
+                        echo '<option value="' . esc_attr($code) . '"' . selected($current_state_code, $code, false) . '>' . esc_html($label) . '</option>';
+                    }
+                    ?>
                 </select>
             </p>
         </div>
-        
+
         <aside class="right-sidebar-top">
             <!-- RED DOOR GRAPHIC -->
             <div class="hero-door-graphic">
-                <img src="<?php echo get_template_directory_uri(); ?>/assets/images/red_door_no_texts.png" 
-                     alt="Red Door" 
+                <img src="<?php echo get_template_directory_uri(); ?>/assets/images/red_door_no_texts.png"
+                     alt="Red Door"
                      style="width: 420px !important; max-width: 420px !important; height: auto !important;">
             </div>
         </aside>
@@ -47,22 +155,20 @@ get_header(); ?>
             <h2>Counties:</h2>
             <div class="county-grid" id="countyGrid">
                 <?php
-                // Get all counties with provider counts
-                $counties = get_terms(array(
-                    'taxonomy' => 'rdr_county',
-                    'hide_empty' => true,
-                    'orderby' => 'name'
-                ));
-                
-                if ($counties && !is_wp_error($counties)) {
-                    foreach ($counties as $county) {
-                        $url = get_term_link($county);
-                        echo '<a href="' . esc_url($url) . '" class="county-link" data-county="' . esc_attr($county->name) . '">' . 
-                             esc_html($county->name) . 
-                             ' <span class="count">(' . $county->count . ')</span></a>';
+                if (is_array($county_rows) && count($county_rows) > 0) {
+                    foreach ($county_rows as $row) {
+                        $label = trim((string)($row['label'] ?? ''));
+                        if ($label === '') continue;
+                        $cnt = (int)($row['cnt'] ?? 0);
+                        $county_slug = rdrn_slugify($label);
+                        $url = home_url('/providers/' . strtolower($current_state_code) . '/' . $county_slug . '/');
+
+                        echo '<a href="' . esc_url($url) . '" class="county-link" data-county="' . esc_attr($label) . '">' .
+                             esc_html($label) .
+                             ' <span class="count">(' . intval($cnt) . ')</span></a>';
                     }
                 } else {
-                    echo '<p>No counties found. Import providers first.</p>';
+                    echo '<p>No counties found for this state yet.</p>';
                 }
                 ?>
             </div>
@@ -70,36 +176,56 @@ get_header(); ?>
             <h2>Major Cities:</h2>
             <div class="city-grid" id="cityGrid">
                 <?php
-                // Get top cities with provider counts
-                $cities = get_terms(array(
-                    'taxonomy' => 'rdr_city',
-                    'hide_empty' => true,
-                    'orderby' => 'count',
-                    'order' => 'DESC',
-                    'number' => 40
-                ));
-                
-                if ($cities && !is_wp_error($cities)) {
-                    foreach ($cities as $city) {
-                        $url = get_term_link($city);
-                        echo '<a href="' . esc_url($url) . '" class="city-link" data-city="' . esc_attr($city->name) . '">' . 
-                             esc_html($city->name) . 
-                             ' <span class="count">(' . $city->count . ')</span></a>';
+                if (is_array($city_rows) && count($city_rows) > 0) {
+                    foreach ($city_rows as $row) {
+                        $label = trim((string)($row['label'] ?? ''));
+                        if ($label === '') continue;
+                        $cnt = (int)($row['cnt'] ?? 0);
+                        // City filtering uses querystring for now (no city pretty-rewrite defined yet)
+                        $url = add_query_arg('city', rawurlencode($label), home_url('/providers/' . strtolower($current_state_code) . '/'));
+
+                        echo '<a href="' . esc_url($url) . '" class="city-link" data-city="' . esc_attr($label) . '">' .
+                             esc_html($label) .
+                             ' <span class="count">(' . intval($cnt) . ')</span></a>';
                     }
                 } else {
-                    echo '<p>No cities found. Import providers first.</p>';
+                    echo '<p>No cities found for this state yet.</p>';
+                }
+                ?>
+            </div>
+
+            <h2>States:</h2>
+            <div class="city-grid" id="stateGrid">
+                <?php
+                $any_states = false;
+                foreach ($dropdown_map as $code => $label) {
+                    $cnt = (int)($counts_by_state[$code] ?? 0);
+                    if ($cnt <= 0) continue;
+                    $any_states = true;
+
+                    // SEO-friendly state page URL: /state/<state-name>/
+                    $slug = $code_to_slug[$code] ?? strtolower($code);
+                    $url = home_url(rtrim($state_base, '/') . '/' . $slug . '/');
+
+                    echo '<a href="' . esc_url($url) . '" class="city-link" data-state="' . esc_attr($code) . '">' .
+                         esc_html($label) .
+                         ' <span class="count">(' . intval($cnt) . ')</span></a>';
+                }
+
+                if (!$any_states) {
+                    echo '<p>No states found. Import providers first.</p>';
                 }
                 ?>
             </div>
         </div>
-        
-        <!-- DAILY READING WIDGET -->
+
+        <!-- DAILY READING WIDGET (verbatim from homepage) -->
         <aside class="right-sidebar-widget">
             <div class="daily-reading-widget">
                 <div class="widget-header">
                     <img src="<?php echo get_template_directory_uri(); ?>/assets/images/through-the-red-door-header.png" alt="Through the Red Door">
                 </div>
-                
+
                 <div class="widget-content">
                     <?php
                     // Get or set journey start date
@@ -109,16 +235,16 @@ get_header(); ?>
                     } else {
                         $start_date = intval($_COOKIE['rdr_journey_start']);
                     }
-                    
+
                     // Calculate current day (1-90)
                     $days_passed = floor((time() - $start_date) / (60 * 60 * 24));
                     $current_day = ($days_passed % 90) + 1;
-                    
+
                     // Ensure day is always positive
                     if ($current_day < 1) {
                         $current_day = 1;
                     }
-                    
+
                     // Get current day's reading from database
                     $reading_query = new WP_Query(array(
                         'post_type' => 'rdr_reading',
@@ -126,11 +252,11 @@ get_header(); ?>
                         'meta_value' => $current_day,
                         'posts_per_page' => 1
                     ));
-                    
+
                     $reading_section = 'Day ' . $current_day;
                     $core_idea = 'Welcome to your daily reading journey.';
                     $interpretation = 'Each day brings new insights and opportunities for growth.';
-                    
+
                     if ($reading_query->have_posts()) {
                         $reading_query->the_post();
                         $reading_section = get_post_meta(get_the_ID(), '_section', true) . ' - ' . get_the_title();
@@ -139,24 +265,24 @@ get_header(); ?>
                         wp_reset_postdata();
                     }
                     ?>
-                    
+
                     <p class="day-counter">Day <span id="currentDay"><?php echo $current_day; ?></span> of 90</p>
-                    
+
                     <div class="reading-section">
                         <h4>Section & Chapter</h4>
                         <p id="readingSection"><?php echo esc_html($reading_section); ?></p>
                     </div>
-                    
+
                     <div class="reading-section">
                         <h4>Core Idea</h4>
                         <p id="coreIdea"><?php echo esc_html($core_idea); ?></p>
                     </div>
-                    
+
                     <div class="reading-section">
                         <h4>Modern Clinical Interpretation</h4>
                         <p id="modernInterpretation"><?php echo esc_html($interpretation); ?></p>
                     </div>
-                    
+
                     <!-- COIN SPRITE DISPLAY -->
                     <div class="milestone-coins" data-current-day="<?php echo $current_day; ?>">
                         <div class="coin coin-day1" data-day="1" data-position="0" title="Day 1: First Step"></div>
@@ -165,7 +291,7 @@ get_header(); ?>
                         <div class="coin coin-day60" data-day="60" data-position="3" title="Day 60: Two Months"></div>
                         <div class="coin coin-day90" data-day="90" data-position="4" title="Day 90: Complete"></div>
                     </div>
-                    
+
                     <div class="widget-actions">
                         <a href="<?php echo home_url('/full-reading/'); ?>" class="btn-read-full">Read Full Passage</a>
                         <a href="#" id="changeCoinSet" class="change-coins-link">Change Coin Style</a>
@@ -176,7 +302,7 @@ get_header(); ?>
         </aside>
     </div>
 
-    <!-- RESOURCES SECTION -->
+    <!-- RESOURCES SECTION (verbatim from homepage) -->
     <section class="resources-section">
         <h2>Get The Help You Need Every Step of The Way</h2>
         <div class="resource-cards">
@@ -217,44 +343,44 @@ get_header(); ?>
             <span class="close-modal">&times;</span>
             <h2>Choose Your Coin Style</h2>
             <p>Select the milestone coins you'd like to earn on your journey:</p>
-            
+
             <div class="coin-sets-grid">
                 <div class="coin-set-option" data-set="heaven">
                     <div class="coin-preview coin-preview-heaven"></div>
                     <h3>Heaven</h3>
                     <p>Angelic clouds and divine light</p>
                 </div>
-                
+
                 <div class="coin-set-option" data-set="skull">
                     <div class="coin-preview coin-preview-skull"></div>
                     <h3>Memento Mori</h3>
                     <p>Dark reflection and transformation</p>
                 </div>
-                
+
                 <div class="coin-set-option" data-set="underwater">
                     <div class="coin-preview coin-preview-underwater"></div>
                     <h3>Ocean Depths</h3>
                     <p>Underwater serenity and life</p>
                 </div>
-                
+
                 <div class="coin-set-option" data-set="lotus">
                     <div class="coin-preview coin-preview-lotus"></div>
                     <h3>Lotus Bloom</h3>
                     <p>Spiritual growth and enlightenment</p>
                 </div>
-                
+
                 <div class="coin-set-option" data-set="galaxy">
                     <div class="coin-preview coin-preview-galaxy"></div>
                     <h3>Cosmic Journey</h3>
                     <p>Stars, galaxies, and infinite space</p>
                 </div>
-                
+
                 <div class="coin-set-option" data-set="jungle">
                     <div class="coin-preview coin-preview-jungle"></div>
                     <h3>Jungle Path</h3>
                     <p>Tropical growth and adventure</p>
                 </div>
-                
+
                 <div class="coin-set-option" data-set="flower">
                     <div class="coin-preview coin-preview-flower"></div>
                     <h3>Garden Blooms</h3>
@@ -280,7 +406,7 @@ document.getElementById('useLocation').addEventListener('click', function() {
         function(position) {
             const lat = position.coords.latitude;
             const lng = position.coords.longitude;
-            
+
             // Redirect to providers page with coordinates
             window.location.href = '<?php echo home_url('/providers/'); ?>?lat=' + lat + '&lng=' + lng + '&near=me';
         },
@@ -292,41 +418,15 @@ document.getElementById('useLocation').addEventListener('click', function() {
     );
 });
 
-// State filter function (SEO-friendly state pages)
-const STATE_SLUGS = <?php
-    // code -> full-name slug
-    $state_name_map = [
-        'AL'=>'Alabama','AK'=>'Alaska','AZ'=>'Arizona','AR'=>'Arkansas','CA'=>'California','CO'=>'Colorado','CT'=>'Connecticut',
-        'DE'=>'Delaware','FL'=>'Florida','GA'=>'Georgia','HI'=>'Hawaii','ID'=>'Idaho','IL'=>'Illinois','IN'=>'Indiana',
-        'IA'=>'Iowa','KS'=>'Kansas','KY'=>'Kentucky','LA'=>'Louisiana','ME'=>'Maine','MD'=>'Maryland','MA'=>'Massachusetts',
-        'MI'=>'Michigan','MN'=>'Minnesota','MS'=>'Mississippi','MO'=>'Missouri','MT'=>'Montana','NE'=>'Nebraska','NV'=>'Nevada',
-        'NH'=>'New Hampshire','NJ'=>'New Jersey','NM'=>'New Mexico','NY'=>'New York','NC'=>'North Carolina','ND'=>'North Dakota',
-        'OH'=>'Ohio','OK'=>'Oklahoma','OR'=>'Oregon','PA'=>'Pennsylvania','RI'=>'Rhode Island','SC'=>'South Carolina','SD'=>'South Dakota',
-        'TN'=>'Tennessee','TX'=>'Texas','UT'=>'Utah','VT'=>'Vermont','VA'=>'Virginia','WA'=>'Washington','WV'=>'West Virginia',
-        'WI'=>'Wisconsin','WY'=>'Wyoming','DC'=>'District of Columbia'
-    ];
-    $out = [];
-    foreach ($state_name_map as $code => $name) {
-        $out[$code] = sanitize_title($name);
-    }
-    echo wp_json_encode($out);
-?>;
+// State page navigation
+const STATE_SLUGS = <?php echo wp_json_encode($code_to_slug); ?>;
+const STATE_BASE = <?php echo wp_json_encode(rtrim($state_base, '/') . '/'); ?>;
 
 function filterByState(stateCode) {
     const code = (stateCode || '').toUpperCase();
     const slug = STATE_SLUGS[code] || code.toLowerCase();
-    window.location.href = '<?php echo home_url('/state/'); ?>' + slug + '/';
+    window.location.href = '<?php echo home_url(); ?>' + STATE_BASE + slug + '/';
 }
-
-// Search form enhancement
-document.querySelector('.search-form').addEventListener('submit', function(e) {
-    const searchInput = this.querySelector('input[name="s"]');
-    if (!searchInput.value.trim()) {
-        e.preventDefault();
-        alert('Please enter a city, ZIP code, or provider name');
-        return false;
-    }
-});
 </script>
 
 <?php get_footer(); ?>
